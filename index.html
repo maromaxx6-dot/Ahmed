@@ -3,20 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>نظام جرد السيريالات</title>
-<script src="https://unpkg.com"></script>
+<title>جرد المشرق</title>
 <script src="https://cloudflare.com"></script>
+<script src="https://unpkg.com"></script>
 <style>
   *{box-sizing:border-box;font-family:Tahoma,Arial,sans-serif}
   body{background:#000000;color:#ffffff;margin:0;padding:15px;display:flex;justify-content:center}
   .box{width:100%;max-width:500px;background:#141414;padding:20px;border-radius:18px;border:1px solid #2a2a2a;box-shadow:0 5px 25px rgba(230,0,0,0.18)}
   .logo{width:85px;height:85px;margin:0 auto 10px;background:#e60000;border-radius:18px;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 4px 12px rgba(230,0,0,0.4)}
   .logo img{width:100%;height:100%;object-fit:cover}
-  h1{text-align:center;color:#ff2a2a;font-size:22px;margin:5px 0}
+  h1{text-align:center;color:#ff2a2a;font-size:24px;margin:5px 0}
   .count{background:#1f0a0a;border:1px solid #5c1414;border-radius:12px;padding:10px;text-align:center;margin:15px 0}
   .count span{color:#cccccc;font-size:14px}
   .count strong{font-size:30px;color:#ff2a2a;display:block}
-  #reader{width:100%;margin-bottom:12px;display:none;border-radius:10px;overflow:hidden;border:1px solid #333}
+  #camBox{display:none;position:relative;width:100%;margin-bottom:12px;border-radius:12px;overflow:hidden;border:2px solid #e60000;background:#000}
+  video{width:100%;height:240px;object-fit:cover;display:block}
+  .scan-line{position:absolute;top:50%;left:10%;right:10%;height:2px;background:#ff2a2a;box-shadow:0 0 8px #ff2a2a}
   .row{display:flex;gap:8px;margin-bottom:12px}
   button{flex:1;padding:12px;border:none;border-radius:10px;font-size:14px;font-weight:bold;color:#fff;cursor:pointer}
   .red{background:#e60000} .gray{background:#333333} .green{background:#198754;flex:.4}
@@ -33,9 +35,14 @@
 <body>
 <div class="box">
   <div class="logo"><img src="logo.png" onerror="this.style.display='none';this.parentNode.innerHTML='<b style=color:#fff>etisalat</b>'"></div>
-  <h1>نظام جرد السيريالات</h1>
+  <h1>جرد المشرق</h1>
   <div class="count"><span>إجمالي الورق المسجل</span><strong id="cnt">0</strong></div>
-  <div id="reader"></div>
+  
+  <div id="camBox">
+    <video id="vid" playsinline></video>
+    <div class="scan-line"></div>
+  </div>
+
   <div class="row">
     <button class="red" onclick="startCam()">📷 تشغيل الكاميرا</button>
     <button class="gray" onclick="stopCam()">⏹ إيقاف</button>
@@ -54,9 +61,20 @@
   </div>
   <table><thead><tr><th>#</th><th>السيريال</th><th>الوقت</th><th>حذف</th></tr></thead><tbody id="tb"></tbody></table>
 </div>
+
 <script>
 let list = JSON.parse(localStorage.getItem('s_list') || '[]');
-let qr = null, last = '', lastT = 0;
+let codeReader = null, last = '', lastT = 0;
+
+function beep() {
+  try {
+    let ctx = new (window.AudioContext || window.webkitAudioContext)();
+    let osc = ctx.createOscillator();
+    osc.type = 'sine'; osc.frequency.value = 800;
+    osc.connect(ctx.destination); osc.start();
+    setTimeout(() => osc.stop(), 120);
+  } catch(e) {}
+}
 
 function draw() {
   document.getElementById('cnt').innerText = list.length;
@@ -74,6 +92,7 @@ function addCode(code) {
   if (list.some(x => x.c === code)) { alert('السيريال مسجل من قبل!'); return; }
   let t = new Date().toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
   list.unshift({c: code, t: t});
+  beep();
   draw();
 }
 
@@ -91,30 +110,48 @@ function clearAll() {
   if (list.length && confirm('مسح جميع السيريالات؟')) { list = []; draw(); }
 }
 
-function startCam() {
-  document.getElementById('reader').style.display = 'block';
-  if (!qr) qr = new Html5Qrcode('reader');
-  qr.start({facingMode:'environment'}, {fps:10, qrbox:220}, (txt) => {
-    let now = Date.now();
-    if (txt !== last || now - lastT > 2500) { last = txt; lastT = now; addCode(txt); }
-  }).catch(() => alert('تأكد من السماح للكاميرا من إعدادات المتصفح'));
+async function startCam() {
+  const camBox = document.getElementById('camBox');
+  camBox.style.display = 'block';
+  try {
+    if (!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
+    await codeReader.decodeFromConstraints(
+      { video: { facingMode: { ideal: 'environment' } } },
+      'vid',
+      (result, err) => {
+        if (result) {
+          let txt = result.getText();
+          let now = Date.now();
+          if (txt !== last || now - lastT > 2500) {
+            last = txt; lastT = now; addCode(txt);
+          }
+        }
+      }
+    );
+  } catch (e) {
+    camBox.style.display = 'none';
+    alert('افتح الرابط في متصفح Google Chrome واسمح بصلاحية الكاميرا');
+  }
 }
 
 function stopCam() {
-  if (qr) qr.stop().then(() => document.getElementById('reader').style.display = 'none');
+  if (codeReader) {
+    codeReader.reset();
+    document.getElementById('camBox').style.display = 'none';
+  }
 }
 
 function toExcel() {
   if (!list.length) return alert('القائمة فارغة');
   let d = list.map((x, i) => ({'م': i+1, 'السيريال': x.c, 'الوقت': x.t}));
   let ws = XLSX.utils.json_to_sheet(d), wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'الجرد');
-  XLSX.writeFile(wb, 'جرد_السيريالات.xlsx');
+  XLSX.utils.book_append_sheet(wb, ws, 'جرد المشرق');
+  XLSX.writeFile(wb, 'جرد_المشرق.xlsx');
 }
 
 function toWA() {
   if (!list.length) return alert('القائمة فارغة');
-  let txt = '*جرد السيريالات (' + list.length + ')*\n' + list.map((x, i) => `${i+1}- ${x.c}`).join('\n');
+  let txt = '*جرد المشرق (' + list.length + ')*\n' + list.map((x, i) => `${i+1}- ${x.c}`).join('\n');
   navigator.clipboard.writeText(txt).then(() => alert('تم النسخ للواتساب ✅'));
 }
 
