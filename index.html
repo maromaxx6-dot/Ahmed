@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>جرد المشرق</title>
 <script src="https://cloudflare.com"></script>
-<script src="https://unpkg.com"></script>
 <style>
   *{box-sizing:border-box;font-family:Tahoma,Arial,sans-serif}
   body{background:#000000;color:#ffffff;margin:0;padding:15px;display:flex;justify-content:center}
@@ -39,7 +38,7 @@
   <div class="count"><span>إجمالي الورق المسجل</span><strong id="cnt">0</strong></div>
   
   <div id="camBox">
-    <video id="vid" playsinline></video>
+    <video id="vid" autoplay playsinline muted></video>
     <div class="scan-line"></div>
   </div>
 
@@ -64,7 +63,7 @@
 
 <script>
 let list = JSON.parse(localStorage.getItem('s_list') || '[]');
-let codeReader = null, last = '', lastT = 0;
+let stream = null, scanTimer = null, last = '', lastT = 0;
 
 function beep() {
   try {
@@ -112,33 +111,41 @@ function clearAll() {
 
 async function startCam() {
   const camBox = document.getElementById('camBox');
-  camBox.style.display = 'block';
+  const vid = document.getElementById('vid');
   try {
-    if (!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
-    await codeReader.decodeFromConstraints(
-      { video: { facingMode: { ideal: 'environment' } } },
-      'vid',
-      (result, err) => {
-        if (result) {
-          let txt = result.getText();
-          let now = Date.now();
-          if (txt !== last || now - lastT > 2500) {
-            last = txt; lastT = now; addCode(txt);
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    vid.srcObject = stream;
+    camBox.style.display = 'block';
+
+    if ('BarcodeDetector' in window) {
+      const detector = new BarcodeDetector();
+      scanTimer = setInterval(async () => {
+        try {
+          const codes = await detector.detect(vid);
+          if (codes.length > 0) {
+            let txt = codes[0].rawValue;
+            let now = Date.now();
+            if (txt !== last || now - lastT > 2500) {
+              last = txt; lastT = now; addCode(txt);
+            }
           }
-        }
-      }
-    );
-  } catch (e) {
-    camBox.style.display = 'none';
-    alert('افتح الرابط في متصفح Google Chrome واسمح بصلاحية الكاميرا');
+        } catch(e) {}
+      }, 400);
+    } else {
+      alert('الكاميرا اشتغلت، لكن متصفحك لا يدعم القراءة التلقائية للباركود؛ استخدم Chrome المحدث.');
+    }
+  } catch (err) {
+    alert('السبب الفعلي لرفض الكاميرا:\n' + err.name + ' - ' + err.message);
   }
 }
 
 function stopCam() {
-  if (codeReader) {
-    codeReader.reset();
-    document.getElementById('camBox').style.display = 'none';
+  if (scanTimer) clearInterval(scanTimer);
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
   }
+  document.getElementById('camBox').style.display = 'none';
 }
 
 function toExcel() {
